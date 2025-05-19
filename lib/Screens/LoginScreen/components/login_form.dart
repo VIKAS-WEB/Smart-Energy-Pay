@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:smart_energy_pay/Screens/ForgotScreen/forgot_pasword_screen.dart';
 import 'package:smart_energy_pay/Screens/HomeScreen/home_screen.dart';
 import 'package:smart_energy_pay/components/check_already_have_an_account.dart';
@@ -19,13 +20,14 @@ class _LoginFormState extends State<LoginForm> {
   final TextEditingController email = TextEditingController();
   final TextEditingController password = TextEditingController();
   final LoginApi _loginApi = LoginApi();
+  final LocalAuthentication _localAuth = LocalAuthentication();
   bool _obsecureText = true;
-
   bool isLoading = false;
   String? errorMessage;
 
   bool _isPasswordValid(String password) {
-    final regex = RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*,.?])(?=.*[0-9]).{8,}$');
+    final regex =
+        RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%&*,.?])(?=.*[0-9]).{8,}$');
     return regex.hasMatch(password);
   }
 
@@ -50,6 +52,9 @@ class _LoginFormState extends State<LoginForm> {
         print('Owner Profile: ${response.ownerProfile}');
         print('KycStatus: ${response.kycStatus}');
 
+        // Save credentials for fingerprint login
+        await AuthManager.saveCredentials(email.text, password.text);
+
         setState(() {
           isLoading = false;
         });
@@ -58,7 +63,8 @@ class _LoginFormState extends State<LoginForm> {
         await AuthManager.saveUserId(response.userId);
         await AuthManager.saveUserName(response.name);
         await AuthManager.saveUserEmail(response.email);
-        await AuthManager.saveUserImage(response.ownerProfile?.toString() ?? '');
+        await AuthManager.saveUserImage(
+            response.ownerProfile?.toString() ?? '');
         if (response.kycStatus == false) {
           await AuthManager.saveKycStatus("completed");
         } else {
@@ -81,6 +87,66 @@ class _LoginFormState extends State<LoginForm> {
     }
   }
 
+  Future<void> _loginWithFingerprint() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      // Check if biometric authentication is available
+      bool canCheckBiometrics = await _localAuth.canCheckBiometrics;
+      bool isDeviceSupported = await _localAuth.isDeviceSupported();
+
+      if (!canCheckBiometrics || !isDeviceSupported) {
+        setState(() {
+          isLoading = false;
+          errorMessage =
+              "Biometric authentication is not available on this device.";
+        });
+        return;
+      }
+
+      // Authenticate using biometrics
+      bool authenticated = await _localAuth.authenticate(
+        localizedReason: 'Please authenticate to log in',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+
+      if (authenticated) {
+        // Load credentials from secure storage
+        final credentials = await AuthManager.getCredentials();
+        if (credentials['email'] == null || credentials['password'] == null) {
+          setState(() {
+            isLoading = false;
+            errorMessage =
+                "No stored credentials found. Please log in manually first.";
+          });
+          return;
+        }
+
+        // Set credentials in text controllers
+        email.text = credentials['email']!;
+        password.text = credentials['password']!;
+        await _login();
+      } else {
+        setState(() {
+          isLoading = false;
+          errorMessage = "Fingerprint authentication failed.";
+        }); 
+      }
+    } catch (error) {
+      print("Fingerprint Login Error: $error");
+      setState(() {
+        isLoading = false;
+        errorMessage = "Fingerprint Login Error: $error";
+      });
+    }
+  }
+
   @override
   void dispose() {
     email.dispose();
@@ -97,7 +163,7 @@ class _LoginFormState extends State<LoginForm> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(defaultPadding), // Optional padding for better spacing
+      padding: const EdgeInsets.all(defaultPadding),
       child: Form(
         key: _formKey,
         child: Column(
@@ -197,7 +263,57 @@ class _LoginFormState extends State<LoginForm> {
               onPressed: isLoading ? null : _login,
               child: const Text("Sign In"),
             ),
-            const SizedBox(height: defaultPadding),
+            const SizedBox(height: 20),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                    width: 120,
+                    child: Divider(
+                      color: kPrimaryColor,
+                      thickness: 1,
+                    )),
+                SizedBox(
+                  width: 10,
+                ),
+                Text("Or"),
+                SizedBox(
+                  width: 10,
+                ),
+                SizedBox(
+                    width: 120,
+                    child: Divider(
+                      color: kPrimaryColor,
+                      thickness: 1,
+                )),
+              ],
+            ),
+            const SizedBox(height: 10),
+            FutureBuilder<bool>(
+              future: _localAuth.canCheckBiometrics,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done &&
+                    snapshot.data == true) {
+                  return GestureDetector(
+                    onTap: isLoading
+                        ? null
+                        : () async {
+                            await _loginWithFingerprint(); // Properly call the async function
+                          },
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.fingerprint, size: 20),
+                        SizedBox(width: 10),
+                        Text("Login With FingerPrints"),
+                      ],
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            const SizedBox(height: 30),
             AlreadyHaveAnAccountCheck(
               press: () {
                 Navigator.push(

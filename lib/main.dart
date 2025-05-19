@@ -13,7 +13,7 @@ import 'package:smart_energy_pay/Screens/TransactionScreen/TransactionDetailsScr
 // Define a simple state management class for authentication and loading
 class AuthenticationState extends ChangeNotifier {
   bool _isLoggedIn = false;
-  bool _isLoading = false; // Add loading state
+  bool _isLoading = false;
 
   bool get isLoggedIn => _isLoggedIn;
   bool get isLoading => _isLoading;
@@ -34,13 +34,22 @@ class AuthenticationState extends ChangeNotifier {
   }
 }
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  /// 👇 Load environment variables first
+  await dotenv.load(fileName: ".env");
+  
+  debugPrint('Stripe Key from .env: ${dotenv.env['stripePublishableKey']}');
+
   if (!kIsWeb) {
     Stripe.publishableKey =
         dotenv.env['stripePublishableKey'] ?? 'default_key';
+        debugPrint('Stripe Key set to: ${Stripe.publishableKey}');    
   }
+
   await AuthManager.init();
+
   runApp(
     MultiProvider(
       providers: [
@@ -48,13 +57,13 @@ void main() async {
         ChangeNotifierProvider(create: (context) => DashboardProvider()),
         ChangeNotifierProvider(create: (context) => TransactionProvider()),
       ],
-      child: const smart_energy_payApp(),
+      child: const SmartEnergyPayApp(),
     ),
   );
 }
 
-class smart_energy_payApp extends StatelessWidget {
-  const smart_energy_payApp({super.key});
+class SmartEnergyPayApp extends StatelessWidget {
+  const SmartEnergyPayApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -63,7 +72,7 @@ class smart_energy_payApp extends StatelessWidget {
         return MaterialApp(
           title: 'Smart Energy Pay',
           debugShowCheckedModeBanner: false,
-          theme: ThemeData(   
+          theme: ThemeData(
             primaryColor: kPrimaryColor,
             scaffoldBackgroundColor: Colors.white,
             elevatedButtonTheme: ElevatedButtonThemeData(
@@ -92,11 +101,8 @@ class smart_energy_payApp extends StatelessWidget {
           ),
           home: Stack(
             children: [
-              // Main content
-              const WelcomeScreen(), // Example home screen; replace with your actual home screen or navigation logic
-              // Show loading indicator when isLoading is true
-              if (authState.isLoading)
-                const LoadingWidget(), // Use the Lottie animation as the global loading indicator
+              const WelcomeScreen(),
+              if (authState.isLoading) const LoadingWidget(),
             ],
           ),
         );

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:jwt_decode/jwt_decode.dart';
 
 class AuthManager {
   static final ValueNotifier<String?> authChangeNotifier = ValueNotifier(null);
   static late SharedPreferences _sharedPref;
+  static final FlutterSecureStorage _secureStorage = FlutterSecureStorage();
   static bool _isFreshLogin = false;
 
   static Future<void> init() async {
@@ -14,7 +16,7 @@ class AuthManager {
   // Save and Get Token
   static Future<void> saveToken(String token) async {
     await _sharedPref.setString('access_token', token);
-    authChangeNotifier.value = token; // Notify listeners about token change
+    authChangeNotifier.value = token;
   }
 
   static String getToken() {
@@ -25,48 +27,70 @@ class AuthManager {
     return _sharedPref.getString('access_token') ?? '';
   }
 
+  // Save and Get Credentials using flutter_secure_storage
+  static Future<void> saveCredentials(String email, String password) async {
+    await _secureStorage.write(key: 'user_email', value: email);
+    await _secureStorage.write(key: 'user_password', value: password);
+  }
+
+  static Future<Map<String, String?>> getCredentials() async {
+    final email = await _secureStorage.read(key: 'user_email');
+    final password = await _secureStorage.read(key: 'user_password');
+    return {'email': email, 'password': password};
+  }
+
   // Check if token is expired
   static bool isTokenExpired(String token) {
     try {
       final payload = Jwt.parseJwt(token);
       final exp = payload['exp'] as int?;
-      if (exp == null) return true; // No expiration claim, assume expired
+      if (exp == null) return true;
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      return exp < now; // Token expired if exp < current time
+      return exp < now;
     } catch (e) {
       print("Error decoding token: $e");
-      return true; // If decoding fails, assume token is invalid
+      return true;
     }
   }
 
-  // Get a valid token (checks expiration, no refresh since no endpoint exists)
+  // Get a valid token
   static Future<String?> getValidToken() async {
     final token = getToken();
     if (token.isEmpty) {
-      await logout(); // Log out if no token exists
+      await logout();
       return null;
     }
 
     if (isTokenExpired(token)) {
-      await logout(); // Log out if token is expired
+      await logout();
       return null;
     }
     return token;
   }
 
-  // Login: Save token and mark as fresh login
+  // Login
   static Future<void> login(String token) async {
     await saveToken(token);
-    _isFreshLogin = true; // Set flag to indicate a fresh login
-    print("Login: _isFreshLogin set to true"); // Debug
+    _isFreshLogin = true;
+    print("Login: _isFreshLogin set to true");
   }
 
-  // Logout: Clear all stored data
+  // Logout: Clear only necessary data, keep credentials
   static Future<void> logout() async {
-    await _sharedPref.clear(); // Clear all SharedPreferences data
-    authChangeNotifier.value = null; // Notify listeners about logout
-    _isFreshLogin = false; // Reset fresh login flag
-    print("Logout: _isFreshLogin set to false"); // Debug
+    await _sharedPref.remove('access_token'); // Clear token only
+    await _sharedPref.remove('user_id');
+    await _sharedPref.remove('kyc_status');
+    await _sharedPref.remove('kyc_id');
+    await _sharedPref.remove('kyc_doc_front');
+    await _sharedPref.remove('user_name');
+    await _sharedPref.remove('user_image');
+    await _sharedPref.remove('otp');
+    await _sharedPref.remove('currency');
+    await _sharedPref.remove('balance');
+    await _sharedPref.remove('selected_account_id');
+    authChangeNotifier.value = null;
+    _isFreshLogin = false;
+    print("Logout: _isFreshLogin set to false");
   }
 
   static bool isLoggedIn() {
@@ -79,7 +103,7 @@ class AuthManager {
 
   static void clearFreshLogin() {
     _isFreshLogin = false;
-    print("clearFreshLogin: _isFreshLogin set to false"); // Debug
+    print("clearFreshLogin: _isFreshLogin set to false");
   }
 
   // Existing methods for user data
